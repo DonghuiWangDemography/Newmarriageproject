@@ -11,6 +11,8 @@
 * updated on 09242019: do not stratify by rural /urban hukou, prepare for paa 
 * updated on 
 
+*ssc install dm79 
+*set scheme cleanplots, perm
 
 clear all 
 global date "01012020"   // mmddyy
@@ -22,6 +24,42 @@ global dir "C:\Users\donghuiw\Desktop\Marriage"  // office
 cfps 
 
 
+*calculate wealth distribution before sample restriction 
+use $w10hh2, clear
+	rename fid fid10_cross
+	xtile quart =total_asset, nq(4)
+	
+	egen hhn=count(total_asset)
+	egen  i = rank(total_asset), track 
+	g rank_nation= 100* (i - 1) / (hhn - 1)  
+	drop hhn i 
+	
+// 	sort pcrank_nation
+// 	twoway line  total_asset pcrank_nation
+	
+	bysort provcd: egen n=count(total_asset)
+	by provcd : egen i=rank(total_asset), track 
+	g rank_prov=100* (i - 1) / (n - 1)  
+	
+	misschk total_asset rank_nation rank_prov  // 572 missing hh asset 
+	
+	
+	*who are the families that has other housing ?
+	g otherhh = (fd7 ==1)
+	
+	
+	
+// 	sort total_asset
+// 	twoway (line total_asset rank_prov if provcd == 11 ) ///
+// 	       (line total_asset rank_prov if provcd == 31 )  ///
+// 		   (line total_asset rank_prov if provcd == 62) 
+
+	
+	keep fid10_cross  quart rank_nation rank_prov
+tempfile pct
+save `pct.dta', replace 
+
+
 *use "${datadir}\pw_a.dta", clear   //missing as high hazard of event occurance 
 *use "${datadir}\pw_b.dta", clear  // low 
 
@@ -31,6 +69,12 @@ use "${datadir}\panel_1016.dta", clear
 merge 1:1 pid using "${datadir}\marr_EHC.dta", nogen    
 *merge 1:1 pid using "${datadir}\spouseinfo.dta", nogen   // around 20% of spousal inforamtion is missing for newlyweds  
 merge 1:1 pid using "${datadir}\work_EHC.dta", nogen     // use only occupation of 10, 12,14, 16
+merge m:1 fid10_cross  using `pct.dta' 
+
+
+// misschk total_asset_10hh2 rank_nation rank_prov, gen(m)
+// list fid10_cross total_asset_10hh2 rank_nation rank_prov if mnumber ==1
+
 
 *======impose sample restrictions====== 
 	*1. alive in 10-16
@@ -122,18 +166,30 @@ drop   eduy_fm_aux
 
 *-------family wealth--------
 *10
-g 		ltasset10=log(total_asset_10hh2+1) if total_asset_10hh2>0
-replace ltasset10=0 if total_asset_10hh2==0
+	g 		ltasset10=log(total_asset_10hh2+1) if total_asset_10hh2>0
+	replace ltasset10=0 if total_asset_10hh2==0
 
-g tasset = total_asset_10hh2 /1000
+	g tasset = total_asset_10hh2 /1000
 
-egen passet10 =rowtotal(houseasset10 companyasset10 financeasset_gross land_asset_10hh2 valuable_10hh2 otherasset_10hh2)
-egen nasset10= rowtotal(house_debts10 nonhousing_debts)
+	egen passet10 =rowtotal(houseasset10 companyasset10 financeasset_gross land_asset_10hh2 valuable_10hh2 otherasset_10hh2)
+	egen nasset10= rowtotal(house_debts10 nonhousing_debts)
 
-g lasset10_p=log(passet10+1)
-g lasset10_n=log(nasset10+1)
+	g lasset10_p=log(passet10+1)
+	g lasset10_n=log(nasset10+1)
 
 
+*IHS (Friedline 2015) 
+	g asset_ihs= log(total_asset_10hh2 + sqrt(total_asset_10hh2^2 +1)) if !missing(total_asset_10hh2)
+
+
+// histogram total_asset_10hh2
+// sum total_asset_10hh2 if total_asset_10hh2<0  // negative asset : 37 hh 
+
+// sort ltasset10 
+// twoway (line  ltasset10 total_asset_10hh2 if female ==1 ) ///
+//        (line  ltasset10 total_asset_10hh2 if female ==0 )
+	   
+	  
 
 // bysort pid : egen hasdebt=sum(nasset10>0)
 // unique fid if hasdebt ==0 
@@ -142,13 +198,15 @@ g lasset10_n=log(nasset10+1)
 
 *family wealth exclude housing value 
 egen wnohh=rowtotal(companyasset10 financeasset_gross land_asset_10hh2 valuable_10hh2 otherasset_10hh2) 
-g lwnohh=log(wnohh +1) 
+g       lwnohh=log(wnohh +1) 
 replace lwnohh =0 if wnohh ==0
 
 
 *family wealth per capita
 g lwealthp= log((passet10/familysize10)+1)
 replace lwealthp=0 if passet10==0
+
+
 
 
 *12 
@@ -170,7 +228,6 @@ egen nasset14=rowtotal(house_debts_14hh2 nonhousing_debts_14hh2)
 
 g lasset14_p=log(passet14+1)
 g lasset14_n=log(nasset14+1)
-
 
 
 
@@ -204,7 +261,8 @@ replace lhouse_debts=0 if house_debts10==0
 g       lnonhousing_debts=log(nonhousing_debts+1)
 replace lnonhousing_debts=0 if nonhousing_debts==0
 
-*calculate pct to total asset 
+*average income 
+egen fincome_ave=rowmean(fincome10 fincome12 fincome14 fincome16)
 
 
 
@@ -257,9 +315,54 @@ replace sp3=sp3_`i' if  gr==`i'
 }
 drop sp1_* sp2_* sp3_*
 
+misschk nchildren*
+// assert nchildren_10hh <= nchildren_12hh
+// assert nchildren_12hh <= nchildren_14hh
+// assert nchildren_14hh <= nchildren_16hh
+
+
+*consider first born only 
+g       newborn12=1 if nchildren_10hh==0 & nchildren_12hh>0
+replace newborn12=0 if nchildren_10hh==0 & nchildren_12hh==0
+
+g       newborn14=1 if nchildren_12hh==0 & nchildren_14hh>1
+replace newborn14=0 if nchildren_12hh==0 & nchildren_14hh==0
+
+g       newborn16=1 if nchildren_14hh==0 & nchildren_16hh>1
+replace newborn16=0 if nchildren_14hh==0 & nchildren_16hh==0
+
+
 
 *save "${datadir}\cross.dta", replace 
 
+*descrptives by wave 
+forval i=12(2)16 {
+g 		status`i'= 1 if marstat`i' == 0
+replace status`i'= 2 if marstay`i' == 1
+replace status`i'= 3 if marleave`i' == 1
+}
+
+
+// #delimit;
+// table1, vars( marstat12 bin \  marstay12 bin  \ urban10 bin \ migrant12 bin  )      
+//          by (otherhh10) format(%2.1f)  test ;
+// delimit cr 
+
+//
+// #delimit;
+// table1, vars( migrant12 bin \ passet10 conts  \ nasset10 conts \ 
+// 			 fincomeper10 conts \ houseasset10 conts \land_asset_10hh2 conts \ companyasset10 conts  \
+// 			 otherhh10 bin \ otherhh14 bin )      
+//          by (status14) format(%2.1f)  test saving("$tables\desc_14.xls", replace) ;
+// delimit cr 
+//
+//
+// #delimit;
+// table1, vars( migrant12 bin \ passet10 conts  \ nasset10 conts \ 
+// 			 fincomeper10 conts \ houseasset10 conts \land_asset_10hh2 conts \ companyasset10 conts  \
+// 			 otherhh10 bin \ otherhh14 bin )      
+//          by (status16) format(%2.1f)  test saving("$tables\desc_14.xls", replace) ;
+// delimit cr 
 
 *=====================
 *define censoring status
@@ -351,9 +454,20 @@ g dtv=Lhouse_debts/Lhouseasset     //housing debt to asset ratio
 la var dtv "housing debt to value ratio"
 
 
+* other 
+g brolive=(nbro_alive_cor>0)
 
-misschk edu_fm lassetp10 Leduy Llincome dagepa han urbanhukou10  Llivepa Lfarmhh Lnonagbushh hasbro Lfamilysize lhouseasset lwnohh ///
-        Llchhp lhouseasset lcompanyasset  lland_asset lfinanceasset lvaluble lotherasset , gen(all)
+egen bro=group(hasbro brolive)
+la def bro 1"no bros"  2"has bro not together" 3 "bro living together" , modify 
+la val bro bro 
+
+local ctrl   "female edu_fm Leduy  han sp1 sp2 sp3 dagepa  partypa Llivepa Lmigrant Lfarmhh Lnonagbushh  bro Lfamilysize  urbanhukou10 region spell Llchhp"
+local wealth "lassetp10 asset_ihs lwnohh lhouseasset lwnohh rank_nation rank_prov"
+local house  "Lhouse_owned Lotherhh nodifficulty10 Lhouse_sqr"
+misschk  `ctrl' `wealth' `house' , gen(all)
+
+// misschk edu_fm lassetp10 Leduy Llincome dagepa han urbanhukou10  Llivepa Lfarmhh Lnonagbushh hasbro Lfamilysize lhouseasset lwnohh ///
+//         Llchhp lhouseasset lcompanyasset  lland_asset lfinanceasset lvaluble lotherasset , gen(all)
 // missing in any covariates : 2.87
 // missing in sonstay = 1718 (32 %) 
 
@@ -363,8 +477,6 @@ keep if missing==0
 
 
 
-misschk Leduy Llincome edu_fm  partypa lassetp10    ///	
-        han urbanhukou10 Lfarmhh Lnonagbushh  dagepa Lfamilysize hasbro Llchhp //M=5309
 *===========descriptives ===========
 // #delimit;
 // table1, vars( married bin \ marstay bin \marleave  bin \ edu_fm contn \lassetp10 contn \ passet10 contn  \
@@ -374,25 +486,24 @@ misschk Leduy Llincome edu_fm  partypa lassetp10    ///
 // delimit cr 
 
 
-g sqwealth=lassetp10*lassetp10
-
-g brolive=(nbro_alive_cor>0)
-
-egen bro=group(hasbro brolive)
-la def bro 1"no bros"  2"has bro not together" 3 "bro living together" , modify 
-la val bro bro 
 
 
 *----------Regression ---------- 
 
-*M1 gender differences of total wealth 
-*local ctrl "sp1 sp2 sp3 dagepa han  partypa Llivepa Lfarmhh Lnonagbushh  hasbro Lfamilysize  urbanhukou10 i.region i.spell "
+*M1 gender differences of total wealth  Llfincome
+local ctrl "sp1 sp2 sp3 dagepa han Llivepa partypa Lfarmhh Lnonagbushh Llfincome i.bro Lfamilysize  urbanhukou10 i.region  i.spell "
+*local ctrl "sp1 sp2 sp3 dagepa han Llivepa Lnonaghukou i.bro Lnonagbushh Lfamilysize  i.region  i.spell"  // suppose to be the paa version 
 
-global iv1 " Lotherhh            sp1 sp2 sp3 dagepa han  partypa Llivepa Lfarmhh Lnonagbushh  bro Lfamilysize  urbanhukou10 i.region i.spell "
-*global iv1 "c.tasset##i.female  sp1 sp2 sp3 dagepa han  partypa Llivepa Lfarmhh Lnonagbushh  hasbro Lfamilysize  urbanhukou10 i.region i.spell "
 
-*global iv1 "c.Llassetp##i.female    c.Llassetn##i.female sp1 sp2 sp3 dagepa han  partypa Llivepa Lfarmhh Lnonagbushh  hasbro Lfamilysize  urbanhukou10 i.region i.spell"
-*global iv2 "c.Llassetp##i.female    c.Llassetn##i.female edu_fm Leduy Llincome  sp1 sp2 sp3 dagepa han partypa  Llivepa Lfarmhh Lnonagbushh  hasbro Lfamilysize  urbanhukou10 i.region i.spell"
+*global iv1 " i.quart##female            sp1 sp2 sp3 dagepa han  partypa Llivepa Lfarmhh Lnonagbushh  bro Lfamilysize  urbanhukou10 i.region i.spell "
+global iv1 "c.rank_prov##i.female"
+
+*global iv1 "c.ltasset10##i.female                 sp1 sp2 sp3 dagepa han  partypa Lmigrant Lfarmhh Lnonagbushh  hasbro Lfamilysize  urbanhukou10 i.region i.spell "
+
+*global iv1 "c.ltasset10##i.female    c.Llassetn##i.female sp1 sp2 sp3 dagepa han  partypa Llivepa Lfarmhh Lnonagbushh  hasbro Lfamilysize  urbanhukou10 i.region i.spell"
+*global iv2 "i.quart##female edu_fm Leduy Llincome  sp1 sp2 sp3 dagepa han partypa  Llivepa Lfarmhh Lnonagbushh  hasbro Lfamilysize  urbanhukou10 i.region i.spell"
+global iv2 "c.rank_prov##i.female edu_fm Leduy "
+
 
 *global iv2 "c.ltasset10##i.female edu_fm Leduy Llincome  sp1 sp2 sp3 dagepa han partypa  Llivepa Lfarmhh Lnonagbushh  hasbro Lfamilysize  urbanhukou10 i.region i.spell"
 *global iv2 "c.lasset10_p##i.female c.lasset10_n##i.female"
@@ -403,33 +514,45 @@ local iv "iv1 iv2"
 
 foreach y of local dv {
 foreach x of local iv { 
-	logit `y' $`x'  if hasbro ==0 , or vce(robust)
+qui: logit `y' $`x' `ctrl',  vce(robust)
+
+	 return list 
+	 mat c=r(table)
+	 mat `y'_`x'=c[1..4,1],c[1..4,3],c[1..4,5]
+	 mat `y'_`x'_T = `y'_`x''
+	
     est store   m1_`y'_`x'
 } 
 }
 
-esttab m1_married_iv1   m1_married_iv2  ///
-       using "$tables\m1_married.rtf",   ///
-       nonumbers mtitles  b(%9.2f)  wide se(%9.2f) noomitted la replace 
+ mat list married_iv2_T ,format (%9.3f)
+ mat list marstay_iv2_T, format (%9.3f)
+ mat list marleave_iv2_T,format (%9.3f)
+ 
 
-esttab m1_marstay_iv1   m1_marstay_iv2  ///
-       using "$tables\m1_marstay.rtf",   ///
-       nonumbers mtitles  b(%9.2f) wide se(%9.2f) noomitted la replace 
-
-esttab m1_marleave_iv1   m1_marleave_iv2  ///
-       using "$tables\m1_marleave.rtf",   ///
-       nonumbers mtitles  b(%9.2f) wide  se(%9.2f) noomitted la replace 
-	   
+// esttab m1_married_iv1   m1_married_iv2  ///
+//        using "$tables\m1_married.rtf",   ///
+//        nonumbers mtitles  b(%9.2f)  wide se(%9.2f) noomitted la replace 
+//
+// esttab m1_marstay_iv1   m1_marstay_iv2  ///
+//        using "$tables\m1_marstay.rtf",   ///
+//        nonumbers mtitles  b(%9.2f) wide se(%9.2f) noomitted la replace 
+//
+// esttab m1_marleave_iv1   m1_marleave_iv2  ///
+//        using "$tables\m1_marleave.rtf",   ///
+//        nonumbers mtitles  b(%9.2f) wide  se(%9.2f) noomitted la replace 
+//	   
 
 *M2 gender differences of wealth category 
-local ctrl "sp1 sp2 sp3 dagepa han  partypa Llivepa Lfarmhh Lnonagbushh  bro Llfincomeper  Lfamilysize  urbanhukou10 i.region i.spell Lchhp"
+local ctrl "sp1 sp2 sp3 dagepa han Llivepa partypa Lfarmhh Lnonagbushh Llfincome i.bro Lfamilysize  urbanhukou10 i.region  i.spell "
+
+
 global iv1 "c.lhouseasset##i.female c.lwnohh##i.female c.lhouse_debts##i.female c.lnonhousing_debts##i.female"
-global iv2 "c.lhouseasset##i.female c.lcompanyasset##i.female  c.lland_asset##i.female c.lfinanceasset##i.female c.lvaluble##i.female c.lotherasset##i.female c.lhouse_debts##i.female c.lnonhousing_debts##i.female" 
+*global iv2 "c.lhouseasset##i.female c.lcompanyasset##i.female  c.lland_asset##i.female c.lfinanceasset##i.female c.lvaluble##i.female c.lotherasset##i.female c.lhouse_debts##i.female c.lnonhousing_debts##i.female" 
 *global iv1 "c.lhouseasset##i.female c.lwnohh##i.female c.lhouse_debts##i.female c.lnonhousing_debts##i.female"
 
-
 local dv "married marstay marleave"
-local iv "iv1 iv2"
+local iv "iv1 "
 
 foreach y of local dv {
 foreach x of local iv { 
@@ -448,11 +571,12 @@ esttab m2_married_iv2  m2_marstay_iv2  m2_marleave_iv2   ///
 
 *M3: the role of housing 
 * Lhouse_owned Lotherhh, Lhouse_sqr Lhouseasset Lhouse_debts
-
-local ctrl "lassetp10 sp1 sp2 sp3 dagepa han  partypa Llivepa Lmigrant Lfarmhh Lnonagbushh  i.bro Lfamilysize Llfincomeper  urbanhukou10 i.region i.spell  Lchhp"
-*global iv1 "Lhouse_owned##i.female Lotherhh##i.female nodifficulty10##i.female c.Lhouse_sqr##i.female c.lhouseasset##i.female  c.lhouse_debts##i.female "
-*global iv1 "c.Lhouse_owned otherhh10##i.female nodifficulty10 c.Lhouse_sqr  c.lhouseasset  c.lhouse_debts "
+local ctrl "lassetp10 sp1 sp2 sp3 dagepa han Llivepa partypa Lfarmhh Lnonagbushh Llfincome i.bro Lfamilysize  urbanhukou10 i.region  i.spell "
+*global iv1 "Lhouse_owned##i.female Lotherhh##i.female nodifficulty10##i.female c.Lhouse_sqr##i.female"
 global iv1 "otherhh10"
+*global iv1 "Lhouse_owned##i.female Lotherhh##i.female nodifficulty10##i.female c.Lhouseasset##i.female"
+*global iv1 "Lhouse_owned otherhh10##i.female nodifficulty10 c.Lhouse_sqr  c.lhouseasset  c.lhouse_debts "
+*global iv1 "otherhh10 female"
 
 
 local dv "married marstay marleave"
