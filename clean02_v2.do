@@ -26,6 +26,7 @@ capture log close
 
 global date "01022020"   // mmddyy
 global dir "C:\Users\donghuiw\Desktop\Marriage"  // office 
+
 *global dir "W:\Marriage"                         // pri 
 *global dir "C:\Users\wdhec\Desktop\Marriage"     // home  
 
@@ -191,13 +192,15 @@ use $w10hh, clear   // unique fid is  14960
 		
 		
 rename cid cid_hh10
+rename familysize familysize_hh10
 
 keep fid pid   code_a_p tb3_a_p tb2_a_p tb5_code_a_p tb501_a_p tb6_a_p tb601_a_p co_p  tb1b_a_p td8_a_p tb1b_a_p  birthy_best    ///
 	     pid_f code_a_f tb3_a_f tb2_a_f tb5_code_a_f tb501_a_f tb6_a_f tb601_a_f co_f  tb1b_a_f td8_a_f tb1b_a_f  fbirthy   foccupcode ///
 		 pid_m code_a_m tb3_a_m tb2_a_m tb5_code_a_m tb501_a_m tb6_a_m tb601_a_m co_m  tb1b_a_m td8_a_m tb1b_a_m  mbirthy   moccupcode  ///
 		 pid_s code_a_s tb3_a_s tb2_a_s tb5_code_a_s tb501_a_s tb6_a_s tb601_a_s co_s  tb1b_a_s td8_a_s tb1b_a_s   ///
 		 educf_10hh educm_10hh byf_10hh bym_10hh educ_10hh byr_10hh educs_10hh bys_10hh bms_10hh  /// 
-		 iseif_10hh iseim_10hh  alive*_10hh live*_10hh *party_10hh cid_hh10 nchildren_10hh byr_children_10hh male_children_10hh
+		 iseif_10hh iseim_10hh  alive*_10hh live*_10hh *party_10hh cid_hh10 nchildren_10hh byr_children_10hh male_children_10hh ///
+		 familysize_hh10
 
 		 
 	local fm "p s f m"
@@ -224,7 +227,7 @@ use $w10hh2, clear	// N=14798
 		rename fid_10hh2 fid 
 		g in_10hh2=1
 
-		merge m:m fid using `w10hh.dta'    // 604 cases from 10hh not matched ? what hapeend ?
+		merge 1:m fid using `w10hh.dta'  // 604 cases from 10hh not matched ? what hapeend ?
 		drop _merge 
 
 		*farming household 
@@ -279,7 +282,8 @@ use $w10hh2, clear	// N=14798
 		replace grave10=0  if  fc5_10hh2==0
 		la var grave10 "visiting gravesite"
 		
-
+		
+		
 		
 save "${datadir}\w10hhmerged.dta" ,replace 
 
@@ -324,8 +328,8 @@ use $w12a, clear
 				gen 	occ = job2012mn_occu if job2012mn_occu>0 
 				replace occ = sg411code_best if sg411code_best>0 & occ==.
 				
-				// Non-farming Last/Current Occupation 
-				*
+				*	// Non-farming Last/Current Occupation 
+
 				gen joblastdate = 0
 				gen type = ""
 				gen num = .

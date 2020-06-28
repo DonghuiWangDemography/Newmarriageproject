@@ -16,13 +16,15 @@ set more off
 capture log close 
 
 global date "02252019"   // mmddyy
-global dir "C:\Users\donghuiw\Desktop\Marriage"  // office 
+*global dir "C:\Users\donghuiw\Desktop\Marriage"  // office 
+*global dir "W:\Marriage"                         // psu
 *global dir "C:\Users\wdhec\Desktop\Marriage"     // home  
+global dir "/Users/donghui/Dropbox/Marriage"  //mac 
 
 sysdir
-cfps // load cfps data (cfps.ado)
+cfps_mac // load cfps data (cfps.ado)
 
-use "${datadir}\marriage.dta" , clear
+use "${datadir}/marriage.dta" , clear
 
 *----------update parental survival information ----------
 * note from cc
@@ -274,19 +276,19 @@ g       lincome10=log(income_10a+1) if income_10a>0
 replace lincome10=0 if inschool_10a==1  & lincome10==.  // N=1646 missing (4.9)
 g hasincome10=(income_10a>0)
 
-g income12=income_adj_12a  if income_adj_12a>=0 
+g        income12=income_adj_12a  if income_adj_12a>=0 
 replace  income12=0 if inschool_12a==1 & income12==.
 
 *misschk income_adj_12a income_adj_12_cross if in_10a==1 
 *egen icdif12=diff(income_adj_12_cross income_adj_12a)
 *misschk income12 if in_12a==1
 
-g lincome12=log(income_adj_12a+1) if income_adj_12a>0 & income_adj_12a<.
+g lincome12=log(income_adj_12a*1.026+1) if income_adj_12a>0 & income_adj_12a<.
 g hasincome12=(income_adj_12a>0 & income_adj_12a<. )
 
 *!!note: income 14/16 is not adjusted. 
 //misschk income_14a income_14_cross if in_14hh==1    
-g 		income14=income_14a if income_14a>=0  
+g 		income14=p_income_14a*1.02 if p_income_14a>=0  
 replace income14=0 if inschool_14a==1 & income14==.
 
 g 		lincome14=log(income14+1) 
@@ -411,12 +413,11 @@ rename nonagbushh_*hh2 nonagbushh*
 
 *----------Housing----------
 *2010
-g house_sqr10=fd2_10hh2  if fd2_10hh2>0  // square footage of the current house 
- 
+g house_sqr10=fd2_10hh2  if fd2_10hh2>0  // square footage of the house 
 
 *housing difficulty 
 egen nodifficulty10= rcount(fd8_s_1_10hh2 fd8_s_2_10hh2 fd8_s_3_10hh2 ), cond(@ == 78)  // no housing difficulty  
-g    housinghard10=1-nodifficulty
+g housinghard10=1-nodifficulty
 
 * other owned housing assets
 gen     otherhh10=1 if fd7_10hh2 == 1
@@ -461,10 +462,12 @@ g 		otherhh16=1 if fr1_16hh2==1
 replace otherhh16=0 if fr1_16hh2==0
 
 *===========wealth,debt,asset==========
+*cpi adjusted wealth : https://towardsdatascience.com/the-what-and-why-of-inflation-adjustment-5eedb496e080
+*100*(actural value/ index value)
 
 *housing value/debt 
 g 		 houseasset10= resivalue_new_10hh2+otherhousevalue_10hh2    // primary housing + other housing 
-clonevar houseasset12= houseasset_gross_12hh2  //235 missing 
+clonevar houseasset12= houseasset_gross_12hh2  
 clonevar houseasset14= houseasset_gross_14hh2
 clonevar houseasset16= houseasset_gross_16hh2
 
@@ -475,7 +478,7 @@ clonevar house_debts16=house_debts_16hh2
 
 
 *other wealth/debt measured at wave 1
-g        houseasset_net10=houseasset10-house_debts10
+g houseasset_net10=houseasset10-house_debts10
 clonevar companyasset10=company_10hh2
 egen financeasset_gross=rowtotal(savings_10hh2 stock_10hh2 funds_10hh2 debit_other_10hh2)
 
@@ -497,14 +500,6 @@ bysort cid_12hh2:   egen chhp12=mean(resivalue_new_12hh2) if resivalue_new_12hh2
 bysort cid14_14hh2: egen chhp14=mean(resivalue_14hh2*10000) if resivalue_14hh2>=0
 
 sum chhp10 chhp12 chhp14
-
-*-----------------durable goods, living standards  ---------------
-g car10 = (fj1_10hh2 ==1 ) if in_10hh==1
-g motor10 = (fj2_10hh2 == 1)  if in_10hh==1
-g tractor10 = (fj301_10hh2 ==1) if in_10hh==1
-g tv10 = (fj4_10hh2 ==1) if in_10hh==1
-
-
 
 
 *==============other  characheristics=================== 
@@ -550,7 +545,6 @@ clonevar fincomeper14=fincome2_per14_cross
 clonevar fincomeper16=fincome2_per16_cross 
 
 
-
 * region
 recode provcd_10a (11/14=1 "north") (21/23=2 "northeast") (31/37=3 "east") ///
 			      (41/45=4 "southcentral") (50/53=5 "southwest") (61/62=6 "northwest"), gen (region) 
@@ -559,7 +553,7 @@ tab region, gen(region) la
 rename qa2_10a hukou10_10a
 
 drop alive_a_c*_10a 
-save "${datadir}\panel_temp.dta" ,replace 
+save "${datadir}/panel_temp.dta" ,replace 
 
 *siblings
 use $w10a,clear
@@ -623,12 +617,12 @@ merge 1:1 pid using `sibnoncore.dta' , keep(match) nogen
 g nbro_alive=nbro_alive_nocor + nbro_alive_cor
 keep fid pid nsib_alive nbro_alive nbro_alive_cor
 
-merge 1:1 pid using "${datadir}\panel_temp.dta" , keep(match) nogen
+merge 1:1 pid using "${datadir}/panel_temp.dta" , keep(match) nogen
 
 g hasbro=(nbro_alive>0 &nbro_alive<.)
 
-save "${datadir}\panel_1016.dta" ,replace
+save "${datadir}/panel_1016.dta" ,replace
 
-erase "${datadir}\panel_temp.dta"
+erase "${datadir}/panel_temp.dta"
 
 beep
