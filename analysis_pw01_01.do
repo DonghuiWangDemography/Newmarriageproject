@@ -15,16 +15,14 @@
 * updated on 06202020: finalize results & cpi adjusted wealth (income was cpi djusted in clean03_2.do 
 *===============================================================
 clear all 
-global date "20200623"   // yymmdd
+global date "20200620"   // yymmdd
 *global dir "C:\Users\donghuiw\Desktop\Marriage"  // office 
 *global dir "D:\Marriage"                         // pri 
 *global dir "C:\Users\wdhec\Desktop\Marriage"     // home  
-global dir "/Users/donghui/Dropbox/Marriage"  //mac 
+global dir "/Users/donghui/Dropbox/Marriage"
 
-*global dir "C:\Users\wdhec\Dropbox\Marriage"  //laptop 
 
 cfps_mac 
-*cfps 
 
 
 *use "${datadir}\pw_a.dta", clear   //missing as high hazard of event occurance 
@@ -34,7 +32,8 @@ cfps_mac
 *compensation: family ses, own ses, physical attractiveness 
 use "${datadir}/panel_1016.dta", clear
 merge 1:1 pid using "${datadir}/marr_EHC.dta", nogen    
-
+*merge 1:1 pid using "${datadir}\spouseinfo.dta", nogen   // around 20% of spousal inforamtion is missing for newlyweds  
+*merge 1:1 pid using "${datadir}\work_EHC.dta", nogen  // use only occupation of 10, 12,14, 16
 
 *======impose sample restrictions====== 
 *1. alive in 10-16
@@ -120,11 +119,10 @@ recode eduy_fm_aux (1=1 "less than primary") (2=2 "primary") (3=3 "middle school
 drop  eduy_fm_aux
 
 *family wealth
-
-misschk total_asset_10hh2 total_asset_12hh2 total_asset_14hh2
 *10
 g 		ltasset10=log(total_asset_10hh2+1) if total_asset_10hh2>0
-replace ltasset10=0 if total_asset_10hh2<=0
+replace ltasset10=0 if total_asset_10hh2==0
+replace ltasset10=. if total_asset_10hh2<0
 
 egen passet10 =rowtotal(houseasset10 companyasset10 financeasset_gross land_asset_10hh2 valuable_10hh2 otherasset_10hh2)
 egen nasset10= rowtotal(house_debts10 nonhousing_debts)
@@ -134,14 +132,14 @@ g lasset10_n=log(nasset10+1)
 
 *family wealth per capita
 g lwealthp= log((passet10/familysize10)+1)
-replace lwealthp=0 if passet10<=0
+replace lwealthp=0 if passet10==0
 
 
 *12 
 replace total_asset_12hh2= total_asset_12hh2*1.026 // inflation ajusted 
 
 g       ltasset12=log(total_asset_12hh2+1) if total_asset_12hh2>0
-replace ltasset12=0 if total_asset_12hh2<=0
+replace ltasset12=0 if total_asset_12hh2==0
 
 egen passet12=rowtotal(land_asset_12hh2 houseasset_gross_12hh2 finance_asset_12hh2 fixed_asset_12hh2 durables_asset_12hh2) 
 egen nasset12=rowtotal(house_debts_10hh2 houseother_debts_12hh2)
@@ -153,7 +151,7 @@ g lasset12_n=log(nasset12*1.026+1)
 replace total_asset_14hh2=total_asset_14hh2*1.02
  
 g       ltasset14=log(total_asset_14hh2+1) if total_asset_14hh2>0
-replace ltasset14=0 if total_asset_14hh2<=0
+replace ltasset14=0 if total_asset_14hh2==0
 
 egen passet14=rowtotal(land_asset_14hh2 houseasset_gross_14hh2 finance_asset_14hh2 fixed_asset_14hh2 durables_asset_14hh2) 
 egen nasset14=rowtotal(house_debts_14hh2 nonhousing_debts_14hh2)
@@ -161,7 +159,30 @@ egen nasset14=rowtotal(house_debts_14hh2 nonhousing_debts_14hh2)
 g lasset14_p=log(passet14*1.02+1)
 g lasset14_n=log(nasset14*1.02+1)
 
-misschk ltasset10 ltasset12 ltasset14
+
+
+*detailed measure of wealth and asset 
+
+*资产：房产，土地，金融，公司
+g 		lhouseasset=log(houseasset10+1)
+replace lhouseasset=0 if houseasset10==0
+
+g lcompanyasset=log(companyasset10+1)
+replace lcompanyasset=0 if companyasset10==0
+
+g 		lfinanceasset=log(financeasset_gross+1)
+replace lfinanceasset=0 if financeasset_gross==0
+
+
+g 		lhouse_debts=log(house_debts10+1)
+replace lhouse_debts=0 if house_debts10==0
+
+g lnonhousing_debts=log(nonhousing_debts+1)
+replace lnonhousing_debts=0 if nonhousing_debts==0
+
+g lland_asset =log(land_asset_10hh2+1)
+replace lland_asset=0 if land_asset_10hh2==0
+
 
 
 *age spline 
@@ -233,6 +254,7 @@ g        married=1 if censor==0
 replace  married=0 if censor==1 
 
 
+
 expand dur 
 bysort pid: g spell=_n
 by pid :gen pycount=_N     //   N=7644 pw  #person-wave 
@@ -248,14 +270,7 @@ replace `x'=`x'16 if dur==3
 }
 *!Note: For sensitivity analysis, marstay12-16/marleave12-16 are already calcuated in clean_04_senA		
 
-*zero prior to censor 
-sort pid spell 
-by pid, : g last=(_n==_N)
 
-local v "married marstay marleave"
-foreach x of local v{
-replace `x'=0   if last==0
-}
 *==========work on IVs==========
 *lag time-varying predictors by one-wave : education, work, income housing condition migrant familyincome
 
@@ -271,7 +286,7 @@ rename  lasset*_n  lassetn*
 // rename mc20* mc*
 // misschk mc10 mc12 mc14  // quite some missing in onccupation: may not appropirate measure occupation 
 #delimit;
-local var "alivefm livepa eduy educ occup income fincome lassetp ltasset lassetn fincomeper 
+local var "alivefm livepa eduy educ occup income fincome lassetp lassetn fincomeper 
            house_owned house_sqr own_p otherhh houseasset house_debts  
 		   nonaghukou migrant  familysize farmhh nonagbushh" ;
 #delimit cr
@@ -298,10 +313,7 @@ replace Llincome=0 if Lincome==0
 
 
 
-*misschk edu_fm lassetp10 Lltasset Llassetp Leduy Llincome dagepa han urbanhukou10  urbanhukou3 Llivepa Lfarmhh Lnonagbushh hasbro Lfamilysize, gen(all)
-
-
-misschk lassetp10 Lltasset Llassetp edu_fm Leduy  Llincome  sp1 sp2 sp3 dagepa han  Llivepa Lfarmhh Lnonagbushh  hasbro Lfamilysize   Lotherhh urbanhukou3 urbanhukou10, gen(all)
+misschk edu_fm lassetp10 Leduy Llincome dagepa han urbanhukou10  urbanhukou3 Llivepa Lfarmhh Lnonagbushh hasbro Lfamilysize, gen(all)
 // missing in any covariates : 2.87
 
 *drop the person as far as he/she has one missing in covariates 
@@ -311,81 +323,45 @@ keep if missing==0
 
 
 misschk Leduy Llincome edu_fm  partypa lassetp10 female   ///	
-        han urbanhukou10 Lfarmhh Lnonagbushh  dagepa Lfamilysize hasbro //M=5309
-		
-
-		
-*end of variable generation 
-
-save "${datadir}\mar_cleaned", replace  
-
-
-
-use "${datadir}\mar_cleaned" , clear 
-*time - invariant predictors 
-keep pid female age edu_fm agepa hasbro region    // N = 2105 
-
-duplicates drop 
-#delimit;
-table1, vars(age contn \ edu_fm conts \ agepa conts \ hasbro bin \ region cat )
-	   by(female) format(%2.1f)  saving("$tables\desc_constant$date.xls", replace) ;
-delimit cr
-
+        han urbanhukou10 Lfarmhh Lnonagbushh urbanhukou3 dagepa Lfamilysize hasbro //M=5309
 *===========descriptives ===========
-
-use "${datadir}\mar_cleaned" , clear 
-
 #delimit;
-table1, vars( married bin \ marstay bin \marleave  bin \ edu_fm contn \lassetp10 contn \ passet10 contn  \ Llassetp conts \
+table1, vars( married bin \ marstay bin \marleave  bin \ edu_fm contn \lassetp10 contn \ passet10 contn  \
               Leduy  contn \ Llincome contn  \ Lincome contn  \
              age contn \ Lfarmhh bin\  urbanhukou10 bin \ Lnonagbushh bin \ dagepa contn \ hasbro bin \ Lfamilysize contn \ region cat )      
-         by (female) format(%2.1f)  test saving("$tables\desc_tv$date.xls", replace) ;
+         by (female) format(%2.1f)  test saving("$tables\desc_all$date.xls", replace) ;
 delimit cr 
 
 
 
 
 *----------Regression ---------- 
-log using "$logs\main_$date" , replace 
 
-
-use "${datadir}\mar_cleaned" , clear 
-
-
-global iv1 "c.Llassetp##i.female edu_fm                    sp1 sp2 sp3 dagepa han  Llivepa Lfarmhh Lnonagbushh  hasbro Lfamilysize   Lotherhh urbanhukou10 urbanhukou3 i.region i.spell"
-global iv2 "c.Llassetp##i.female edu_fm  Leduy   Llincome  sp1 sp2 sp3 dagepa han  Llivepa Lfarmhh Lnonagbushh  hasbro Lfamilysize   Lotherhh urbanhukou10 urbanhukou3 i.region i.spell" 
-
-
-// global iv1 "c.Lltasset##i.female edu_fm                    sp1 sp2 sp3 dagepa han  Llivepa Lfarmhh Lnonagbushh  hasbro Lfamilysize   Lotherhh urbanhukou10 i.region"
-// global iv2 "c.Llassetp##i.female edu_fm  Leduy   Llincome  sp1 sp2 sp3 dagepa han  Llivepa Lfarmhh Lnonagbushh  hasbro Lfamilysize   Lotherhh urbanhukou10 i.region " 
+*global iv0 "edu_fm Leduy Llincome  urbanhukou10    c.lassetp10  i.male sp1 sp2 sp3 dagepa han  Llivepa Lfarmhh Lnonagbushh  hasbro Lfamilysize   Lotherhh i.region i.spell"
+global iv1 "c.Llassetp##i.female                        sp1 sp2 sp3 dagepa han  Llivepa Lfarmhh Lnonagbushh  hasbro Lfamilysize   Lotherhh urbanhukou10 i.region i.spell"
+global iv2 "c.Llassetp##i.female edu_fm Leduy Llincome  sp1 sp2 sp3 dagepa han  Llivepa Lfarmhh Lnonagbushh  hasbro Lfamilysize   Lotherhh urbanhukou10 i.region i.spell"
 
 local dv "married marstay marleave"
-local iv "iv1 iv2 "
+local iv "iv1 iv2"
 
 foreach y of local dv {
 foreach x of local iv { 
-	logit `y' $`x'  , or vce(robust) 
+	logit `y' $`x'  , or vce(robust)
     est store   all_`y'_`x'
 } 
 }
 
-#delimit; 
-esttab all_married_iv1   all_married_iv2  
-       using "$tables\all_married_$date.rtf",   
-       nocons nonumbers mtitles  b(%9.2f)  wide se(%9.2f) noomitted la replace 
-;
+esttab all_married_iv1   all_married_iv2  ///
+       using "$tables/all_married_$date.rtf",   ///
+       nonumbers mtitles  b(%9.2f)  wide se(%9.2f) noomitted la replace 
 
-esttab all_marstay_iv1   all_marstay_iv2 
-       using "$tables\all_marstay_$date.rtf",  
+esttab all_marstay_iv1   all_marstay_iv2  ///
+       using "$tables/all_marstay_$date.rtf",   ///
        nonumbers mtitles  b(%9.2f) wide se(%9.2f) noomitted la replace 
-;
 
-esttab all_marleave_iv1   all_marleave_iv2  
-       using "$tables\all_marleave_$date.rtf",   
+esttab all_marleave_iv1   all_marleave_iv2  ///
+       using "$tables/all_marleave_$date.rtf",   ///
        nonumbers mtitles  b(%9.2f) wide  se(%9.2f) noomitted la replace 
-;	   
-delimit cr 
-
-log close    
-
-erase "${datadir}\mar_cleaned.dta"
+	   
+	   
+	   
